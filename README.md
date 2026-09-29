@@ -1,37 +1,60 @@
-# Naiwa Pet
+# Naiwa Desktop Pet
 
-奶蛙-一个轻量级 Tauri 桌面宠物应用，支持 Windows 和 macOS。
+一只支持拖拽、缩放、镜像、复制、单独关闭与动作库的奶蛙桌面宠物。使用 **Tauri 2 + TypeScript + Vite** 构建，当前面向 Windows 开发。
 
-## 桌面效果
+## 功能
 
-![Naiwa Pet 桌面演示](public/demo.webp)
+- 左键点击随机播放一段完整动作。
+- 右键打开菜单，按需播放指定动作。
+- 每只奶蛙都是独立窗口：尺寸、镜像状态和播放状态互不影响。
+- 支持复制、镜像翻转、调整尺寸与单独关闭。
+- 内置原始动作、待机摆动、前方摇摆、开怀大笑、图书馆舞步和背身扭扭舞。
 
+## 开始使用
+
+```sh
+npm ci
+npm run tauri:dev
+```
+
+启动后，右键任意奶蛙可打开 **动作库**、**尺寸设定**、镜像、复制与关闭等操作。
 
 ## 常用命令
 
 ```sh
-npm install
-npm run assets:naiwa
+# 类型检查并构建前端
+npm run build
+
+# 启动桌面开发程序
 npm run tauri:dev
+
+# 构建桌面安装包
 npm run tauri:build
-```
 
-## 宠物素材
-
-默认宠物素材位于 `public/pets/naiwa`。
-
-- `manifest.json` 用于描述动画。
-- `frames/*.webp` 是透明背景的动画帧。
-- `audio.m4a` 是从源素材中提取的音频。
-
-如果需要从 `naiwa.mp4` 重新生成内置的 Naiwa 素材：
-
-```sh
+# 从根目录的原始视频重新生成默认动作
 npm run assets:naiwa
+
+# 将本地 GIF 处理成一个完整的桌面动作
+npm run assets:action -- assets/source-gifs/your-action.gif your-action --name "动作名称"
 ```
 
-以后如果要添加其他宠物，可以创建一个结构相同的素材目录，并更新 `src/main.ts` 中的 `DEFAULT_PET_ID`。
+## 目录说明
 
-## 构建
+```text
+src/                 前端交互与动作播放器
+src-tauri/           Tauri 原生窗口配置
+public/pets/         默认宠物的运行时素材
+public/actions/      动作库的运行时帧、音频与清单（提交到 Git）
+scripts/             默认宠物与 GIF 动作的素材处理工具
+assets/source-gifs/  本地原始 GIF，便于再处理（不提交到 Git）
+```
 
-本地 macOS 构建产物会输出到 `src-tauri/target/release/bundle`。
+每个 `public/actions/<action-id>/` 目录都包含：
+
+- `manifest.json`：动作名称、帧率、总帧数与资源路径。
+- `frames/*.webp`：透明背景的动作帧。
+- `audio.m4a`：该动作播放时使用的音频。
+
+## 发布前提示
+
+`public/actions/` 中的素材会随代码发布。公开仓库或分发安装包前，请确认你拥有这些角色图片、GIF 与音频素材的再发布权利。

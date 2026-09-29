@@ -12,11 +12,25 @@ type PetManifest = {
   frameCount: number;
   idleFrame: string;
   framePattern: string;
-  audio: string;
+  audio: string | null;
 };
 
-const DEFAULT_PET_ID = "naiwa";
+type PetAction = {
+  id: string;
+  name: string;
+  root: string;
+  manifest: PetManifest;
+};
+
 const APP_NAME = "奶蛙";
+const ACTION_SOURCES = [
+  { id: "original", name: "原始动作", root: "/pets/naiwa" },
+  { id: "idle-sway", name: "待机摆动", root: "/actions/idle-sway" },
+  { id: "front-sway", name: "前方摇摆", root: "/actions/front-sway" },
+  { id: "big-laugh", name: "开怀大笑", root: "/actions/big-laugh" },
+  { id: "library-dance", name: "图书馆舞步", root: "/actions/library-dance" },
+  { id: "back-dance", name: "背身扭扭舞", root: "/actions/back-dance" },
+] as const;
 const PET_SIZE_OPTIONS = [
   { id: "max", label: "超大号", width: 360, height: 480 },
   { id: "large", label: "大号", width: 240, height: 320 },
@@ -29,6 +43,7 @@ const PET_SIZE_OPTIONS = [
 type PetSizeId = (typeof PET_SIZE_OPTIONS)[number]["id"];
 
 const appWindow = getCurrentWindow();
+const menuItemId = (name: string) => `${appWindow.label}-${name}`;
 const app = document.querySelector<HTMLDivElement>("#app");
 
 if (!app) {
@@ -56,10 +71,25 @@ const getInitialPetSizeId = (): PetSizeId => {
   return isPetSizeId(size) ? size : "medium";
 };
 
+const getInitialMirrored = () => new URLSearchParams(window.location.search).get("mirrored") === "true";
+
 let currentPetSizeId: PetSizeId = getInitialPetSizeId();
+let currentMirrored = getInitialMirrored();
 let contextMenuPromise: Promise<Menu> | null = null;
 let lastContextMenuPosition = { x: 64, y: 64 };
 const petSizeItems = new Map<PetSizeId, CheckMenuItem>();
+let mirrorItem: CheckMenuItem | null = null;
+let actionPool: PetAction[] = [];
+let playAction: ((action: PetAction) => Promise<void>) | null = null;
+
+const playRandomAction = async () => {
+  if (!playAction || actionPool.length === 0) {
+    return;
+  }
+
+  const action = actionPool[Math.floor(Math.random() * actionPool.length)];
+  await playAction(action);
+};
 
 const syncPetSizeChecks = async () => {
   await Promise.all(
@@ -75,12 +105,18 @@ const setPetSize = async (sizeId: PetSizeId) => {
   await syncPetSizeChecks();
 };
 
+const setMirrored = async (mirrored: boolean) => {
+  currentMirrored = mirrored;
+  pet.classList.toggle("is-mirrored", currentMirrored);
+  await mirrorItem?.setChecked(currentMirrored);
+};
+
 const createAnotherPet = () => {
   const size = getPetSize(currentPetSizeId);
   const label = `pet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   const window = new WebviewWindow(label, {
-    url: `/?size=${currentPetSizeId}`,
+    url: `/?size=${currentPetSizeId}&mirrored=${currentMirrored}`,
     title: APP_NAME,
     width: size.width,
     height: size.height,
@@ -102,15 +138,58 @@ const createAnotherPet = () => {
 
 const createContextMenu = async () => {
   const addPetItem = await MenuItem.new({
-    id: "add-pet",
+    id: menuItemId("add-pet"),
     text: "再来一只",
     action: createAnotherPet,
+  });
+
+  mirrorItem = await CheckMenuItem.new({
+    id: menuItemId("mirror-pet"),
+    text: "镜像翻转",
+    checked: currentMirrored,
+    action: () => {
+      void setMirrored(!currentMirrored);
+    },
+  });
+
+  const closePetItem = await MenuItem.new({
+    id: menuItemId("close-pet"),
+    text: "关闭这只奶蛙",
+    action: () => {
+      void appWindow.close();
+    },
+  });
+
+  const randomActionItem = await MenuItem.new({
+    id: menuItemId("random-action"),
+    text: "随机播放",
+    action: () => {
+      void playRandomAction();
+    },
+  });
+
+  const actionItems = await Promise.all(
+    actionPool.map(async (action) =>
+      MenuItem.new({
+        id: menuItemId(`action-${action.id}`),
+        text: action.name,
+        action: () => {
+          void playAction?.(action);
+        },
+      }),
+    ),
+  );
+
+  const actionMenu = await Submenu.new({
+    id: menuItemId("action-menu"),
+    text: "动作库",
+    items: [randomActionItem, await PredefinedMenuItem.new({ item: "Separator" }), ...actionItems],
   });
 
   const sizeItems = await Promise.all(
     PET_SIZE_OPTIONS.map(async (size) => {
       const item = await CheckMenuItem.new({
-        id: `pet-size-${size.id}`,
+        id: menuItemId(`pet-size-${size.id}`),
         text: size.label,
         checked: size.id === currentPetSizeId,
         action: () => {
@@ -125,7 +204,7 @@ const createContextMenu = async () => {
 
   // 1. 尺寸设定只包含尺寸相关的选项
   const sizeMenu = await Submenu.new({
-    id: "pet-size-menu",
+    id: menuItemId("pet-size-menu"),
     text: "尺寸设定",
     items: sizeItems, 
   });
@@ -133,10 +212,13 @@ const createContextMenu = async () => {
   // 2. 在根菜单中组合“再来一只”、“分隔符”和“尺寸设定”子菜单
   return Menu.new({ 
     items: [
-      addPetItem, 
-      await PredefinedMenuItem.new({ item: "Separator" }), 
-      sizeMenu
-    ] 
+      addPetItem,
+      actionMenu,
+      mirrorItem,
+      sizeMenu,
+      await PredefinedMenuItem.new({ item: "Separator" }),
+      closePetItem,
+    ]
   });
 };
 
@@ -152,29 +234,40 @@ const enableContextMenu = () => {
 
     const menu = await getContextMenu();
     await syncPetSizeChecks();
+    await mirrorItem?.setChecked(currentMirrored);
     await menu.popup(new LogicalPosition(event.clientX, event.clientY), appWindow);
   });
 };
 
-const loadManifest = async (petId: string): Promise<PetManifest> => {
-  const response = await fetch(`/pets/${petId}/manifest.json`);
+const loadManifest = async (manifestUrl: string): Promise<PetManifest> => {
+  const response = await fetch(manifestUrl);
   if (!response.ok) {
-    throw new Error(`Failed to load pet manifest: ${response.status}`);
+    throw new Error(`Failed to load action manifest: ${response.status}`);
   }
 
   return response.json() as Promise<PetManifest>;
 };
 
-const formatFramePath = (manifest: PetManifest, index: number) => {
+const assetPath = (action: PetAction, path: string) => `${action.root}/${path}`;
+
+const formatFramePath = (action: PetAction, index: number) => {
   const frameIndex = String(index).padStart(4, "0");
-  return `/pets/${manifest.id}/${manifest.framePattern.replace("{index}", frameIndex)}`;
+  return assetPath(action, action.manifest.framePattern.replace("{index}", frameIndex));
 };
 
-const preloadImages = async (manifest: PetManifest) => {
-  const promises = Array.from({ length: manifest.frameCount }, (_, index) => {
+const loadActionPool = async () =>
+  Promise.all(
+    ACTION_SOURCES.map(async (source) => ({
+      ...source,
+      manifest: await loadManifest(`${source.root}/manifest.json`),
+    })),
+  );
+
+const preloadImages = async (action: PetAction) => {
+  const promises = Array.from({ length: action.manifest.frameCount }, (_, index) => {
     const image = new Image();
     image.decoding = "async";
-    image.src = formatFramePath(manifest, index);
+    image.src = formatFramePath(action, index);
     return image.decode().catch(() => undefined);
   });
 
@@ -189,55 +282,73 @@ const loadImage = (src: string) =>
     image.src = src;
   });
 
-const createPetPlayer = async (manifest: PetManifest) => {
-  const audio = new Audio(`/pets/${manifest.id}/${manifest.audio}`);
-  audio.preload = "auto";
-
-  const idleSrc = `/pets/${manifest.id}/${manifest.idleFrame}`;
+const createPetPlayer = async (idleAction: PetAction) => {
   let animationFrame = 0;
-  let playing = false;
   let startTime = 0;
+  let activeAction: PetAction | null = null;
+  let activeAudio: HTMLAudioElement | null = null;
+  const audioByAction = new Map<string, HTMLAudioElement>();
+
+  const getAudio = (action: PetAction) => {
+    if (!action.manifest.audio) {
+      return null;
+    }
+
+    let audio = audioByAction.get(action.id);
+    if (!audio) {
+      audio = new Audio(assetPath(action, action.manifest.audio));
+      audio.preload = "auto";
+      audioByAction.set(action.id, audio);
+    }
+    return audio;
+  };
 
   const setIdle = () => {
-    playing = false;
     window.cancelAnimationFrame(animationFrame);
-    pet.src = idleSrc;
+    activeAction = null;
+    activeAudio?.pause();
+    if (activeAudio) {
+      activeAudio.currentTime = 0;
+    }
+    activeAudio = null;
+    pet.src = assetPath(idleAction, idleAction.manifest.idleFrame);
   };
 
   const render = (now: number) => {
-    const elapsed = now - startTime;
-    const frame = Math.floor((elapsed / 1000) * manifest.fps);
+    if (!activeAction) {
+      return;
+    }
 
-    if (frame >= manifest.frameCount) {
+    const elapsed = now - startTime;
+    const frame = Math.floor((elapsed / 1000) * activeAction.manifest.fps);
+
+    if (frame >= activeAction.manifest.frameCount) {
       setIdle();
       return;
     }
 
-    pet.src = formatFramePath(manifest, frame);
+    pet.src = formatFramePath(activeAction, frame);
     animationFrame = window.requestAnimationFrame(render);
   };
 
-  const play = async () => {
+  const play = async (action: PetAction) => {
     window.cancelAnimationFrame(animationFrame);
-    audio.pause();
-    audio.currentTime = 0;
-    playing = true;
+    activeAudio?.pause();
+    activeAction = action;
+    activeAudio = getAudio(action);
+    if (activeAudio) {
+      activeAudio.currentTime = 0;
+    }
     startTime = performance.now();
-    pet.src = formatFramePath(manifest, 0);
+    pet.src = formatFramePath(action, 0);
     animationFrame = window.requestAnimationFrame(render);
 
     try {
-      await audio.play();
+      await activeAudio?.play();
     } catch {
       // Browser policies should allow click-triggered playback, but animation still works if audio is blocked.
     }
   };
-
-  audio.addEventListener("ended", () => {
-    if (!playing) {
-      audio.currentTime = 0;
-    }
-  });
 
   setIdle();
 
@@ -250,26 +361,30 @@ const enableWindowDrag = () => {
       return;
     }
 
+    // Tauri 开始原生拖拽后通常不会再派发 click 事件；在按下时播放，
+    // 既能保证轻点有反馈，也不影响继续拖动窗口。
+    void playRandomAction();
     await appWindow.startDragging();
   });
 };
 
 const boot = async () => {
   try {
-    const manifest = await loadManifest(DEFAULT_PET_ID);
-    document.documentElement.style.setProperty("--pet-aspect", `${manifest.width} / ${manifest.height}`);
-    pet.style.aspectRatio = `${manifest.width} / ${manifest.height}`;
-    const idleSrc = `/pets/${manifest.id}/${manifest.idleFrame}`;
+    actionPool = await loadActionPool();
+    const idleAction = actionPool[0];
+    document.documentElement.style.setProperty("--pet-aspect", `${idleAction.manifest.width} / ${idleAction.manifest.height}`);
+    pet.style.aspectRatio = `${idleAction.manifest.width} / ${idleAction.manifest.height}`;
+    const idleSrc = assetPath(idleAction, idleAction.manifest.idleFrame);
     await loadImage(idleSrc);
     pet.src = idleSrc;
-    const play = await createPetPlayer(manifest);
+    await setMirrored(currentMirrored);
+    playAction = await createPetPlayer(idleAction);
 
     hint.remove();
     pet.classList.add("is-ready");
-    pet.addEventListener("click", play);
     enableWindowDrag();
     enableContextMenu();
-    void preloadImages(manifest);
+    actionPool.forEach((action) => void preloadImages(action));
   } catch (error) {
     hint.textContent = error instanceof Error ? error.message : "Failed to load pet";
   }

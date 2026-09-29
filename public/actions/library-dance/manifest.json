@@ -1,0 +1,11 @@
+{
+  "id": "library-dance",
+  "name": "图书馆舞步",
+  "width": 720,
+  "height": 960,
+  "fps": 30,
+  "frameCount": 107,
+  "idleFrame": "frames/frame_0000.webp",
+  "framePattern": "frames/frame_{index}.webp",
+  "audio": "audio.m4a"
+}

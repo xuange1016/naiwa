@@ -1,7 +1,7 @@
 [package]
 name = "naiwa-pet"
 version = "0.1.0"
-description = "A lightweight desktop pet."
+description = "An interactive Naiwa desktop pet with a configurable action library."
 authors = ["Naiwa Pet"]
 edition = "2021"
 

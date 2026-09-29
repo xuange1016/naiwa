@@ -43,6 +43,10 @@ body {
   opacity: 1;
 }
 
+.pet.is-mirrored {
+  transform: scaleX(-1);
+}
+
 .loading {
   color: rgba(0, 0, 0, 0.55);
   font-size: 13px;

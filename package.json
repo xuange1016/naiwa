@@ -1,5 +1,6 @@
 {
-  "name": "naiwa-pet",
+  "name": "naiwa-desktop-pet",
+  "description": "Interactive Naiwa desktop pet with dragging, resizing, mirroring, cloning, and an action library.",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -9,8 +10,15 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "assets:naiwa": "node scripts/generate-pet-assets.mjs naiwa.mp4 public/pets/naiwa"
+    "assets:naiwa": "node scripts/generate-pet-assets.mjs naiwa.mp4 public/pets/naiwa",
+    "assets:action": "node scripts/generate-action-assets.mjs"
   },
+  "keywords": [
+    "desktop-pet",
+    "tauri",
+    "typescript",
+    "naiwa"
+  ],
   "dependencies": {
     "@tauri-apps/api": "^2.0.0"
   },
